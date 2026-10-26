@@ -1,0 +1,77 @@
+ingest:
+  fps: 10             # output frame rate
+  start_seconds: 0    # offset into the source video
+  clip_seconds: 300   # clip length (5 minutes)
+  crf: 18             # x264 quality (lower = better)
+  preset: fast
+  keyframe_seconds: 1 # keyframe interval, keeps seeking cheap for the tagging tool
+  audio_sr: 16000     # WAV sample rate (whistle band is 2-4 kHz)
+
+tag:
+  display_width: 1280
+  speed: 1.0          # initial playback speed (x real time)
+  seek_seconds: 5     # arrow-key jump
+
+detect:
+  model: yolo11s.pt     # COCO-pretrained; weights cached in models/
+  device: cpu           # "cpu" or CUDA index e.g. 0
+  imgsz: 1280           # inference size; ball is tiny at 1080p, so keep this high
+  ball_conf: 0.05       # low on purpose: COCO "sports ball" is weak on small far balls
+  player_conf: 0.30
+  preview_width: 1280   # annotated preview video width
+
+audio:
+  band_low_hz: 2000     # whistle band
+  band_high_hz: 4000
+  window_ms: 50         # STFT window; hop is half of this
+  band_ratio_min: 0.5   # band energy / total energy must exceed this (whistles are narrow-band)
+  band_level_db: 12     # and band energy must sit this far above the clip's median band energy
+  min_seconds: 0.15     # shorter bursts are not whistles
+  merge_gap_seconds: 0.2  # join bursts separated by less than this
+
+signals:
+  work_width: 960        # frames are downscaled to this width for optical flow
+  max_bg_points: 300     # background features tracked per frame (camera motion)
+  max_player_points: 400 # features tracked inside player boxes (player motion)
+  box_shrink: 0.15       # shrink player boxes by this fraction per side before picking features
+  ball_min_conf: 0.30    # ball detections below this are ignored
+  ball_gap_frames: 5     # interpolate ball position across gaps up to this many frames
+  smooth_seconds: 7      # rolling-median window for the smoothed signals (tuned on 4 clips, leave-one-clip-out ~83%)
+
+stoppage:
+  min_seconds: 2         # stoppages shorter than this are treated as in-play (CLAUDE.md definition)
+
+inplay:
+  # smoothed signal -> threshold; a frame "votes" in play when its signal is above the threshold.
+  # Joint fit on 4 clips (2 matches), see outputs/combined_tuned.json. zoom and min_play_seconds were unstable across folds.
+  thresholds:
+    cam_speed_smooth: 0.03
+    zoom_rate_smooth: 0.03
+    player_speed_smooth: 0.4
+  votes_min: 2           # votes needed (of 3) for a frame to count as in play
+  min_play_seconds: 6    # in-play blips shorter than this are treated as stopped
+  periods:               # only these windows are analysed; half-time / pre / post footage is excluded
+    - {name: clip, start_s: 0, end_s: 180}
+
+evaluate:
+  train_end_s: 120                # tune on [0, train_end_s); report the rest as held-out
+  boundary_tolerance_seconds: 5   # a predicted transition within this of a labelled one counts as a match
+  cv_folds: 3                     # contiguous time blocks for the out-of-fold cross-check
+  calibration_weights: [0, 1, 2, 4]  # weight on in-play % error in the tuning objective (0 = frame accuracy only)
+  grid:                           # search space for tuning
+    smooth_seconds: [2, 3, 5, 7, 10]
+    cam_speed: [0.02, 0.03, 0.04, 0.05, 0.07]
+    zoom_rate: [0.005, 0.01, 0.015, 0.03]
+    player_speed: [0.2, 0.3, 0.4, 0.5, 0.6, 0.8]
+    votes_min: [1, 2, 3]
+    min_play_seconds: [2, 4, 6, 8]
+
+learn:
+  centred_windows_s: [2, 5, 10]  # centred rolling-median windows per signal
+  std_window_s: 5                # centred rolling std window
+  side_window_s: 5               # past-only and future-only mean windows (offline analysis uses both)
+  gbt_max_depth: 3               # keep trees shallow: only ~7k labelled frames
+  gbt_iters: 100
+  prob_smooth_s: 3               # smooth predicted probability before thresholding
+  prob_threshold: 0.5
+  min_play_seconds: 6            # same cleanup as the rules (stoppage.min_seconds also applies)

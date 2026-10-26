@@ -1,0 +1,53 @@
+#!/bin/bash
+# One-shot job: fetch code + video from S3, run the pipeline on the GPU, upload results, then terminate the box.
+set -eo pipefail
+exec > >(tee -a /var/log/footy-job.log) 2>&1
+set -x
+
+BUCKET="${bucket}"
+JOB="${job_name}"
+INPUT="${input_key}"
+
+# Watchdog: whatever happens, the instance is gone after this long.
+shutdown -P +${max_runtime_minutes}
+
+finish() {
+  rc=$?
+  echo "job exited with status $rc"
+  aws s3 cp /var/log/footy-job.log "s3://$BUCKET/results/$JOB/job.log" || true
+  shutdown -h now
+}
+trap finish EXIT
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+apt-get install -y ffmpeg python3-venv python3-pip unzip
+
+if ! command -v aws >/dev/null; then
+  snap install aws-cli --classic
+fi
+
+mkdir -p /opt/footy
+cd /opt/footy
+aws s3 cp "s3://$BUCKET/code/footy-code.tgz" code.tgz
+tar xzf code.tgz
+
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -q --upgrade pip
+pip install -q torch torchvision   # default Linux wheels bundle CUDA
+pip install -q -e .
+
+nvidia-smi
+python -c "import torch; assert torch.cuda.is_available(), 'CUDA not available'; print(torch.cuda.get_device_name(0))"
+
+mkdir -p data/raw data/clips outputs models
+aws s3 cp "s3://$BUCKET/$INPUT" data/raw/match.mp4
+
+python -m footy.ingest data/raw/match.mp4 --start 0 --duration ${duration_seconds} --crf ${crf} -o data/clips/match.mp4
+python -m footy.audio data/clips/match.wav
+python -m footy.detect data/clips/match.mp4 --device 0 --no-preview
+python -m footy.motion data/clips/match.mp4 --whistles outputs/match_whistles.csv
+python -m footy.inplay outputs/match_signals.parquet
+
+aws s3 sync outputs "s3://$BUCKET/results/$JOB/"

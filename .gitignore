@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+data/
+models/
+outputs/
+
+# terraform / packaging
+infra/**/.terraform/
+infra/**/*.tfstate
+infra/**/*.tfstate.*
+infra/**/*.tfvars
+*.egg-info/
