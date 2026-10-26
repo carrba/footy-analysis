@@ -25,6 +25,7 @@ The instance copies the video from S3 onto its own disk (`aws s3 cp`) before pro
 ## One-time setup
 
 1. **Check credentials** (in WSL): `aws sts get-caller-identity`. If it fails, run `aws configure` (or `aws configure sso`) first. Use an account/user that can create S3, IAM and EC2 resources.
+   Terraform will prompt for `aws_profile` (the profile name from `~/.aws/config`) on every plan/apply/destroy. To skip the prompt: `export TF_VAR_aws_profile=<name>`. For the AWS CLI commands below, `export AWS_PROFILE=<name>` (`scripts/aws_push_code.sh` prompts if it is unset).
 2. **Request GPU quota.** New accounts usually have 0 vCPUs for G instances, and the launch fails until this is raised. In the console, Service Quotas, EC2 (region eu-west-2), request at least **4 vCPUs** for:
    - "All G and VT Spot Instance Requests" (for spot)
    - "Running On-Demand G and VT instances" (only if you set `use_spot=false`)

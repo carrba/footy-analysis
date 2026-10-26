@@ -3,6 +3,11 @@
 # Usage: scripts/aws_push_code.sh   (run from the repo root, after `terraform apply` has created the bucket)
 set -euo pipefail
 
+if [ -z "${AWS_PROFILE:-}" ]; then
+  read -rp "AWS profile name: " AWS_PROFILE
+  export AWS_PROFILE
+fi
+
 BUCKET="$(terraform -chdir=infra/aws/storage output -raw bucket)"
 TARBALL="$(mktemp --suffix=.tgz)"
 

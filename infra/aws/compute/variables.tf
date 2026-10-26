@@ -1,3 +1,8 @@
+variable "aws_profile" {
+  description = "Name of the AWS CLI profile to use (see ~/.aws/config)."
+  type        = string
+}
+
 variable "region" {
   description = "AWS region. Must match the storage stack."
   type        = string
